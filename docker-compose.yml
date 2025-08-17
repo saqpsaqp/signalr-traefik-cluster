@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis-backplane
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - signalr-network
+
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik-lb
+    command:
+      - --api.insecure=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --log.level=INFO
+      - --accesslog=true
+    ports:
+      - "8888:80"
+      - "8080:8080"  # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - signalr-network
+
+  signalr:
+    build: .
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__Redis=redis:6379
+      - ASPNETCORE_URLS=http://+:8080
+    depends_on:
+      - redis
+    networks:
+      - signalr-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.signalr.rule=Host(`localhost`)"
+      - "traefik.http.routers.signalr.entrypoints=web"
+      - "traefik.http.services.signalr.loadbalancer.server.port=8080"
+      # Enable sticky sessions for WebSocket connections
+      - "traefik.http.services.signalr.loadbalancer.sticky.cookie=true"
+      - "traefik.http.services.signalr.loadbalancer.sticky.cookie.name=signalr-server"
+      # Health check
+      - "traefik.http.services.signalr.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.services.signalr.loadbalancer.healthcheck.interval=30s"
+    deploy:
+      replicas: 5
+
+  # Service discovery helper
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: redis-ui
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.redis-ui.rule=Host(`localhost`) && PathPrefix(`/redis`)"
+      - "traefik.http.routers.redis-ui.entrypoints=web"
+      - "traefik.http.services.redis-ui.loadbalancer.server.port=8081"
+      - "traefik.http.routers.redis-ui.middlewares=redis-stripprefix"
+      - "traefik.http.middlewares.redis-stripprefix.stripprefix.prefixes=/redis"
+    depends_on:
+      - redis
+    networks:
+      - signalr-network
+
+volumes:
+  redis_data:
+
+networks:
+  signalr-network:
+    driver: bridge

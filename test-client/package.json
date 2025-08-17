@@ -1,0 +1,13 @@
+{
+  "name": "signalr-test-client",
+  "version": "1.0.0",
+  "description": "Test client for SignalR cluster",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "@microsoft/signalr": "^8.0.7"
+  }
+}

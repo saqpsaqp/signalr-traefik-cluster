@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SignalR Chat Test - Dynamic Node Selection</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #messages { border: 1px solid #ccc; height: 300px; overflow-y: scroll; padding: 10px; margin: 10px 0; }
+        .message { margin: 5px 0; }
+        .system { color: #666; font-style: italic; }
+        input, button, select { padding: 5px; margin: 5px; }
+        #messageInput { width: 300px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .loading { background-color: #fff3cd; color: #856404; }
+        .node-selector { background-color: #e7f1ff; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .node-info { background-color: #f8f9fa; padding: 10px; border-left: 4px solid #007bff; margin: 10px 0; }
+        select { min-width: 200px; }
+        .refresh-btn { background-color: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        .refresh-btn:hover { background-color: #545b62; }
+    </style>
+</head>
+<body>
+    <h1>SignalR Cluster Chat Test - Dynamic Node Selection</h1>
+    
+    <div class="node-selector">
+        <h3>Node Selection <small>(Auto-refreshes every 10s)</small></h3>
+        <div>
+            <label for="nodeSelect">Choose SignalR Node:</label>
+            <select id="nodeSelect" disabled>
+                <option value="">Loading available nodes...</option>
+            </select>
+            <button id="refreshNodesButton" class="refresh-btn">🔄 Refresh Now</button>
+        </div>
+        <div id="nodeDescription" class="node-info" style="display: none;"></div>
+    </div>
+    
+    <div id="status" class="status disconnected">Disconnected</div>
+    <div id="nodeInfo" class="status disconnected">Node: Not connected</div>
+    
+    <div>
+        <input type="text" id="userInput" placeholder="Your name" value="TestUser" />
+        <button id="connectButton" disabled>Connect</button>
+        <button id="disconnectButton" disabled>Disconnect</button>
+        <button id="getNodeButton" disabled>Get Node Info</button>
+    </div>
+    
+    <div>
+        <input type="text" id="messageInput" placeholder="Type a message..." disabled />
+        <button id="sendButton" disabled>Send</button>
+    </div>
+    
+    <div>
+        <input type="text" id="groupInput" placeholder="Group name" value="TestGroup" />
+        <button id="joinGroupButton" disabled>Join Group</button>
+        <button id="leaveGroupButton" disabled>Leave Group</button>
+        <button id="sendGroupButton" disabled>Send to Group</button>
+    </div>
+    
+    <div id="messages"></div>
+
+    <script src="https://unpkg.com/@microsoft/signalr@latest/dist/browser/signalr.min.js"></script>
+    <script>
+        let connection = null;
+        let availableNodes = [];
+
+        // DOM elements
+        const nodeSelect = document.getElementById("nodeSelect");
+        const nodeDescription = document.getElementById("nodeDescription");
+        const refreshNodesButton = document.getElementById("refreshNodesButton");
+        const statusDiv = document.getElementById("status");
+        const nodeInfoDiv = document.getElementById("nodeInfo");
+        const messagesDiv = document.getElementById("messages");
+        const userInput = document.getElementById("userInput");
+        const messageInput = document.getElementById("messageInput");
+        const groupInput = document.getElementById("groupInput");
+        const connectButton = document.getElementById("connectButton");
+        const disconnectButton = document.getElementById("disconnectButton");
+        const getNodeButton = document.getElementById("getNodeButton");
+        const sendButton = document.getElementById("sendButton");
+        const joinGroupButton = document.getElementById("joinGroupButton");
+        const leaveGroupButton = document.getElementById("leaveGroupButton");
+        const sendGroupButton = document.getElementById("sendGroupButton");
+
+        // Load available nodes from API
+        async function loadAvailableNodes() {
+            try {
+                const response = await fetch('http://localhost:8888/nodes');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                availableNodes = data.available_nodes;
+                populateNodeSelector();
+                
+                // Update node count display
+                const nodeCount = data.active_count || 0;
+                const loadingText = nodeCount > 0 ? 
+                    `${nodeCount} active nodes discovered` : 
+                    "No active nodes found";
+                
+                // Only update status if not connected
+                if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
+                    statusDiv.textContent = loadingText;
+                    statusDiv.className = nodeCount > 0 ? "status connected" : "status disconnected";
+                }
+                
+                console.log(`Loaded ${nodeCount} active nodes:`, availableNodes);
+                
+            } catch (error) {
+                console.error('Error loading nodes:', error);
+                
+                // Only update status if not connected
+                if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
+                    statusDiv.textContent = `Error loading nodes: ${error.message}`;
+                    statusDiv.className = "status disconnected";
+                }
+                
+                // Fallback to hardcoded nodes
+                availableNodes = [
+                    { id: "balanced", name: "Load Balanced", url: "/chathub", description: "Auto-balanced across all nodes" }
+                ];
+                populateNodeSelector();
+            }
+        }
+
+        function populateNodeSelector() {
+            const currentSelection = nodeSelect.value;
+            nodeSelect.innerHTML = '<option value="">Select a node...</option>';
+            
+            availableNodes.forEach(node => {
+                const option = document.createElement('option');
+                option.value = node.url;
+                option.textContent = `${node.name}${node.lastSeen ? ` (${new Date(node.lastSeen).toLocaleTimeString()})` : ''}`;
+                option.setAttribute('data-description', node.description);
+                option.setAttribute('data-id', node.id);
+                nodeSelect.appendChild(option);
+            });
+            
+            // Restore previous selection if it still exists
+            if (currentSelection) {
+                const optionExists = Array.from(nodeSelect.options).some(opt => opt.value === currentSelection);
+                if (optionExists) {
+                    nodeSelect.value = currentSelection;
+                    // Trigger change event to update description
+                    nodeSelect.dispatchEvent(new Event('change'));
+                }
+            }
+            
+            nodeSelect.disabled = false;
+            connectButton.disabled = nodeSelect.value === "";
+        }
+
+        function addMessage(user, message, connectionId, nodeId = '', isSystem = false) {
+            const div = document.createElement("div");
+            div.className = isSystem ? "message system" : "message";
+            const nodeText = nodeId ? ` [${nodeId}]` : '';
+            div.innerHTML = `<strong>${user}:</strong> ${message} <small>(${connectionId}${nodeText})</small>`;
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function updateStatus(connected) {
+            if (connected) {
+                statusDiv.textContent = `Connected (ID: ${connection.connectionId})`;
+                statusDiv.className = "status connected";
+                connectButton.disabled = true;
+                disconnectButton.disabled = false;
+                getNodeButton.disabled = false;
+                messageInput.disabled = false;
+                sendButton.disabled = false;
+                joinGroupButton.disabled = false;
+                leaveGroupButton.disabled = false;
+                sendGroupButton.disabled = false;
+                nodeSelect.disabled = true;
+            } else {
+                statusDiv.textContent = "Disconnected";
+                statusDiv.className = "status disconnected";
+                nodeInfoDiv.textContent = "Node: Not connected";
+                nodeInfoDiv.className = "status disconnected";
+                connectButton.disabled = nodeSelect.value === "";
+                disconnectButton.disabled = true;
+                getNodeButton.disabled = true;
+                messageInput.disabled = true;
+                sendButton.disabled = true;
+                joinGroupButton.disabled = true;
+                leaveGroupButton.disabled = true;
+                sendGroupButton.disabled = true;
+                nodeSelect.disabled = false;
+            }
+        }
+
+        function createConnection(hubUrl) {
+            if (connection) {
+                connection.stop();
+            }
+
+            const fullUrl = `http://localhost:8888${hubUrl}`;
+            connection = new signalR.HubConnectionBuilder()
+                .withUrl(fullUrl)
+                .build();
+
+            connection.on("ReceiveMessage", function (user, message, connectionId, nodeId) {
+                addMessage(user, message, connectionId, nodeId, user === "System");
+            });
+
+            connection.on("NodeInfo", function (nodeId, connectionId) {
+                const selectedOption = nodeSelect.options[nodeSelect.selectedIndex];
+                const selectedNodeName = selectedOption ? selectedOption.textContent : 'Unknown';
+                nodeInfoDiv.textContent = `Node: ${nodeId} (via ${selectedNodeName})`;
+                nodeInfoDiv.className = "status connected";
+            });
+
+            connection.onclose(function () {
+                updateStatus(false);
+            });
+        }
+
+        // Event listeners
+        nodeSelect.addEventListener("change", function() {
+            const selectedOption = this.options[this.selectedIndex];
+            if (selectedOption && selectedOption.value) {
+                const description = selectedOption.getAttribute('data-description');
+                nodeDescription.textContent = description;
+                nodeDescription.style.display = 'block';
+                connectButton.disabled = false;
+            } else {
+                nodeDescription.style.display = 'none';
+                connectButton.disabled = true;
+            }
+        });
+
+        refreshNodesButton.addEventListener("click", loadAvailableNodes);
+
+        connectButton.addEventListener("click", function () {
+            const selectedUrl = nodeSelect.value;
+            if (!selectedUrl) {
+                alert("Please select a node first");
+                return;
+            }
+
+            createConnection(selectedUrl);
+            
+            connection.start().then(function () {
+                updateStatus(true);
+                connection.invoke("GetNodeInfo").catch(function (err) {
+                    console.error(err.toString());
+                });
+            }).catch(function (err) {
+                console.error(err.toString());
+                alert("Connection failed: " + err.toString());
+            });
+        });
+
+        getNodeButton.addEventListener("click", function () {
+            connection.invoke("GetNodeInfo").catch(function (err) {
+                console.error(err.toString());
+            });
+        });
+
+        disconnectButton.addEventListener("click", function () {
+            connection.stop();
+        });
+
+        sendButton.addEventListener("click", function () {
+            const user = userInput.value;
+            const message = messageInput.value;
+            if (user && message) {
+                connection.invoke("SendMessage", user, message).catch(function (err) {
+                    console.error(err.toString());
+                });
+                messageInput.value = "";
+            }
+        });
+
+        joinGroupButton.addEventListener("click", function () {
+            const groupName = groupInput.value;
+            if (groupName) {
+                connection.invoke("JoinGroup", groupName).catch(function (err) {
+                    console.error(err.toString());
+                });
+            }
+        });
+
+        leaveGroupButton.addEventListener("click", function () {
+            const groupName = groupInput.value;
+            if (groupName) {
+                connection.invoke("LeaveGroup", groupName).catch(function (err) {
+                    console.error(err.toString());
+                });
+            }
+        });
+
+        sendGroupButton.addEventListener("click", function () {
+            const user = userInput.value;
+            const message = messageInput.value;
+            const groupName = groupInput.value;
+            if (user && message && groupName) {
+                connection.invoke("SendToGroup", groupName, user, message).catch(function (err) {
+                    console.error(err.toString());
+                });
+                messageInput.value = "";
+            }
+        });
+
+        messageInput.addEventListener("keypress", function (event) {
+            if (event.key === "Enter") {
+                sendButton.click();
+            }
+        });
+
+        // Auto-refresh nodes periodically
+        let autoRefreshInterval;
+        
+        function startAutoRefresh() {
+            // Refresh nodes every 10 seconds
+            autoRefreshInterval = setInterval(() => {
+                if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
+                    loadAvailableNodes();
+                }
+            }, 10000);
+        }
+        
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+        }
+
+        // Initialize
+        updateStatus(false);
+        loadAvailableNodes();
+        startAutoRefresh();
+    </script>
+</body>
+</html>
