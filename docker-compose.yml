@@ -60,13 +60,12 @@ services:
     container_name: redis-ui
     environment:
       - REDIS_HOSTS=local:redis:6379
+      - URL_PREFIX=/redis
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.redis-ui.rule=Host(`localhost`) && PathPrefix(`/redis`)"
       - "traefik.http.routers.redis-ui.entrypoints=web"
       - "traefik.http.services.redis-ui.loadbalancer.server.port=8081"
-      - "traefik.http.routers.redis-ui.middlewares=redis-stripprefix"
-      - "traefik.http.middlewares.redis-stripprefix.stripprefix.prefixes=/redis"
     depends_on:
       - redis
     networks:
