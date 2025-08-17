@@ -104,20 +104,19 @@ node test.js
 ### Project Structure
 ```
 signalr-poc-cluster/
-├── docker-compose.yml          # Main orchestration file
-├── Dockerfile                  # SignalR app container
-├── Program.cs                  # .NET application entry point
+├── docker-compose.yml           # Main orchestration file
+├── Dockerfile                   # SignalR app container
+├── Program.cs                   # .NET application entry point
 ├── Hubs/
-│   └── ChatHub.cs             # SignalR hub implementation
+│   └── ChatHub.cs               # SignalR hub implementation
 ├── Services/
 │   └── NodeRegistrationService.cs  # Redis node registration
 ├── test-client/
-│   ├── web-client-dynamic.html # Dynamic web client
-│   ├── web-client.html        # Static web client
-│   ├── test.js               # Node.js test client
-│   └── index.js              # Alternative test client
-├── README.md                  # This file
-└── CLAUDE.md                 # AI assistant instructions
+│   ├── web-client-dynamic.html  # Dynamic web client
+│   ├── web-client.html          # Static web client
+│   ├── test.js                  # Node.js test client
+│   └── index.js                 # Alternative test client
+└── README.md                    # This file
 ```
 
 ### Key Components
