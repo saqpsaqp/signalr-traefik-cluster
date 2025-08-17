@@ -45,8 +45,8 @@ A proof-of-concept implementation of a scalable SignalR real-time chat system us
 ### Start the Cluster
 ```bash
 # Clone the repository
-git clone <your-repo-url>
-cd signalr-poc-cluster
+git clone https://github.com/saqpsaqp/signalr-traefik-cluster.git
+cd signalr-traefik-cluster
 
 # Start with 3 SignalR nodes
 docker-compose up --build --scale signalr=3
